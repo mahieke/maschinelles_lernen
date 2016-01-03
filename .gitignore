@@ -59,4 +59,11 @@ target/
 # PDF files
 *.pdf
 lecture
+
+# unecessary files
 .ipynb_checkpoints
+.idea
+
+#data
+lfw_funneled
+lfw-funneled.tgz

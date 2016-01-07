@@ -2,6 +2,7 @@
 import urllib.request
 import tarfile
 import sys
+from os import remove
 
 def reporthook(blocknum, blocksize, totalsize):
     readsofar = blocknum * blocksize
@@ -29,6 +30,8 @@ def main():
     # extract tar file
     tar = tarfile.open(dest_file)
     tar.extractall('./')
+
+    remove(dest_file)
 
 
 if __name__ == '__main__':

@@ -63,6 +63,7 @@ lecture
 # unecessary files
 .ipynb_checkpoints
 .idea
+a2/util/.idea
 
 #data
 lfw_funneled

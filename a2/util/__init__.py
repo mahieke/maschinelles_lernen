@@ -158,6 +158,6 @@ def get_dataset(root, files, scale_factor=1):
 
         frame.append(img)
 
-    pdframe = pd.DataFrame(frame)
+    nparray = np.array(frame)
 
-    return name, pdframe
+    return name, nparray, amount_img

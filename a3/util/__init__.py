@@ -1,6 +1,6 @@
 import numpy as np
 import os
-import scipy.stats as scs
+import math
 from skimage.io import imread
 import matplotlib.pyplot as plt
 
@@ -120,15 +120,15 @@ class Perceptron(object):
             data: List of 2 Datasets (2 Classes)
                 Each must datapoint must be in the same vector space R^d
         """
-        self._data = np.vstack(data)
+        _data = np.vstack(data)
         amount1 = data[0].shape[0]
         amount2 = data[1].shape[0]
-        self.l, self.d = self._data.shape
+        self.l, self.d = _data.shape
 
-        self.R = np.max(np.linalg.norm(self._data, axis=1)) ** 2
+        self.R = np.max(np.linalg.norm(_data, axis=1)) ** 2
 
         self.data = np.zeros((self.l, self.d))
-        self.data[:,:] = self._data
+        self.data[:,:] = _data
         self.y = np.vstack([1]*amount1 + [-1]*amount2)
         self.w = np.zeros(self.d)
         self.b = 0
@@ -141,10 +141,6 @@ class Perceptron(object):
         self.wsteps = []
         self.mi = np.zeros(self.l)
 
-
-    @staticmethod
-    def func_margin(xi, yi, w):
-        return yi * ( np.dot(xi,w) )
 
     def learn(self, max_iterations=0):
         """
@@ -181,11 +177,11 @@ class Perceptron(object):
 
         print("correction steps: {}".format(len(self.wsteps)))
 
-    def classify(self, to_classify, labels):
+    def classify(self, data, labels):
         """
 
         Args:
-            to_classify: data matrix which should be classified
+            data: data matrix which should be classified
             labels: vector with labels to check classification
 
         Returns:
@@ -194,7 +190,7 @@ class Perceptron(object):
 
         false_negative, true_negative, false_positive, true_positive = 0,0,0,0
 
-        for xi, yi  in zip(to_classify,labels):
+        for xi, yi  in zip(data, labels):
             m = xi.dot(self.w) + self.b
 
             if m <= 0: # negative
@@ -209,10 +205,10 @@ class Perceptron(object):
                 else:
                     true_positive += 1
 
-        print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100*false_negative/len(to_classify)))
-        print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100*false_positive/len(to_classify)))
-        print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100*true_negative/len(to_classify)))
-        print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive,100*true_positive/len(to_classify)))
+        print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / len(data)))
+        print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / len(data)))
+        print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / len(data)))
+        print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive, 100 * true_positive / len(data)))
 
 
     def plot_result2D(self, colors, amount_correction_steps=2, ):
@@ -325,9 +321,107 @@ class Perceptron(object):
                 Z[i][j] = res
 
         plt.contourf(X,Y,Z, 100, cmap=plt.get_cmap('afmhot'))
-        #contour(X, Y, Z, 100,linewidths = (10,), zorder=-1, cmap=plt.get_cmap('afmhot'))
 
 
-class NaiveBayes(object):
-    def __init__(self):
-        pass
+class GaussianNaiveBayes(object):
+    def __init__(self, data):
+        self.data_class1 , self.data_class2 = data
+
+        self.l_class1 = len(self.data_class1)
+        self.l_class2 = len(self.data_class2)
+        self.l_all = self.l_class1 + self.l_class2
+
+
+    def learn(self):
+        self.p_class1 = self.l_class1 / self.l_all
+        self.p_class2 = self.l_class2 / self.l_all
+
+        # A1 flattens the resulting (1,d) matrix
+        self.mean_class1 = np.mean(self.data_class1, axis=0).A1
+        self.mean_class2 = np.mean(self.data_class2, axis=0).A1
+
+        self.std_class1 = np.std(self.data_class1, axis=0).A1
+        self.std_class2 = np.std(self.data_class2, axis=0).A1
+
+
+    def classify(self, data, label):
+        """
+        Args:
+            data: datapoints which should be classified
+            label: label_vector to check if classification is correct
+
+        Returns:
+
+        """
+        true_positive = 0
+        true_negative = 0
+        false_positive = 0
+        false_negative = 0
+
+        classifaction_vector = []
+
+        for datapoint, y in zip(data, label):
+            dp = datapoint.A1
+            likelihood_class1 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(dp, self.mean_class1, self.std_class1)])
+            likelihood_class2 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(dp, self.mean_class2, self.std_class2)])
+
+            if likelihood_class1 * self.p_class1 > likelihood_class2 * self.p_class2:
+                # datapoint belongs to class1: true
+                if int(y) == 1:
+                    true_positive += 1
+                else:
+                    true_negative += 1
+
+                classifaction_vector.append(1)
+            else:
+                #datapoint belongs to class2: false
+                if int(y) == -1:
+                    false_positive += 1
+                else:
+                    false_negative += 1
+
+                classifaction_vector.append(-1)
+
+
+        print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / len(data)))
+        print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / len(data)))
+        print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / len(data)))
+        print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive, 100 * true_positive / len(data)))
+
+        return classifaction_vector
+
+    def plot_discriminant_function(self, colors):
+        ax = plt.subplot(111)
+
+        min_val = -2
+        max_val =  2
+
+        ax.axis([min_val,max_val, min_val,max_val])
+        window_size =  np.arange(min_val-1, max_val+1)
+
+        X,Y = np.meshgrid(window_size,window_size)
+        Z = np.zeros(X.shape)
+        x = np.zeros(2)
+
+        for i in range(0, Z.shape[0]):
+            for j in range (0, Z.shape[1]):
+                x[0] = X[i][j]
+                x[1] = Y[i][j]
+
+                likelihood_class1 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(x, self.mean_class1, self.std_class1)])
+                likelihood_class2 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(x, self.mean_class2, self.std_class2)])
+
+                Z[i][j] = ((self.p_class1 * likelihood_class1) / (self.p_class2 * likelihood_class2)) - 1
+
+        ax.contourf(X,Y,Z, 2, cmap=plt.get_cmap('gray'))
+        ax.scatter(self.data_class1[:,0], self.data_class1[:,1], c=colors[0])
+        ax.scatter(self.data_class2[:,0], self.data_class2[:,1], c=colors[1])
+
+    @staticmethod
+    def GNB(x, sigma, mu):
+        variance = sigma**2
+        pi = math.pi
+        a = 1 / np.sqrt(2*pi*variance)
+        exp = np.exp((-0.5 / variance) * (x - mu)**2)
+
+        return a*exp

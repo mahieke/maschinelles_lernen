@@ -2,6 +2,8 @@ import numpy as np
 import os
 import math
 from skimage.io import imread
+from matplotlib.colors import BoundaryNorm
+from matplotlib.ticker import MaxNLocator
 import matplotlib.pyplot as plt
 
 def create_isotropic_gaussian_twindataset(pos, amount_data, variance, sep_vec):
@@ -77,12 +79,13 @@ def imstack2vectors(image):
         return image.flatten()
 
 
-def get_dataset(root, files, scale_factor=1):
+def get_dataset(root, files, scale_factor=1, crop_factor=1):
     """
     Args:
         root (string): path to images
         files (list): list of image files in directory root
         scale_factor (int): scale image by this factor
+        cropfactor: 1/crop_factor
 
     Returns (dict):
         Returns _data_ in a numpy array and metadata (_name_ and _amount_ of data)
@@ -94,15 +97,18 @@ def get_dataset(root, files, scale_factor=1):
 
     for f in files:
         img = imread('{}/{}'.format(root,f), as_grey=True)
+        lx,ly = img.shape
+        
+        cropped_img = img[lx / crop_factor: - lx / crop_factor, ly / crop_factor: - ly / crop_factor]
 
         # make it work if someone
         scale = int(scale_factor)
         if scale > 1:
-            img = img[::scale,::scale]
+            cropped_img = cropped_img[::scale,::scale]
 
-        img = imstack2vectors(img)
+        cropped_img = imstack2vectors(cropped_img)
 
-        frame.append(img)
+        frame.append(cropped_img)
 
     nparray = np.array(frame)
 
@@ -154,13 +160,13 @@ class Perceptron(object):
         steps = 0
         i = 0
 
-        while min(self.mi) <= 0:
+        while min(self.mi) <= 0.0:
             i = (i + 1) % self.l
 
             # update functional margin
             self.mi[i] = self.y[i] * (np.dot(self.w, self.data[i]) + self.b)
 
-            if self.mi[i] <= 0: # update on error classification
+            if self.mi[i] <= 0.0: # update on error classification
                 # update weight vector
                 self.w = self.w + self.y[i] * self.eta * self.data[i]
                 self.b = self.b + self.y[i] * self.eta * self.R
@@ -176,6 +182,8 @@ class Perceptron(object):
                 break
 
         print("correction steps: {}".format(len(self.wsteps)))
+        print("Last step: b = {}, \n\t   w = {}".format(self.b, self.w))
+        print("Functional margin min and max: {}, {}".format(min(self.mi), max(self.mi)))
 
     def classify(self, data, labels):
         """
@@ -193,7 +201,7 @@ class Perceptron(object):
         for xi, yi  in zip(data, labels):
             m = xi.dot(self.w) + self.b
 
-            if m <= 0: # negative
+            if m <= 0.0: # negative
                 if int(yi) == -1:
                     true_negative += 1
                 else:
@@ -215,7 +223,7 @@ class Perceptron(object):
         """
         Does only work with 2 dimensional data
         Args:
-            amount_correction_steps: limits plots of the parting planes
+            amount_correction_steps: limits plots of the seperating planes
         Returns:
             plot object
         """
@@ -260,26 +268,33 @@ class Perceptron(object):
             axi.scatter(d1[:,0], d1[:,1], c=colors[0])
             axi.scatter(d2[:,0], d2[:,1], c=colors[1])
 
-        self.plot_parting_plane('Blue', ax[0], "End result")
+        self.plot_separating_plane('Blue', ax[0], "End result")
 
         lower = len(self.wsteps) - amount
 
         i = lower
         for axi, plane_param in zip(ax[1:], self.wsteps[lower:]):
-            self.plot_parting_plane('Blue', axi, 'Step {}'.format(i+1), plane_param)
+            self.plot_separating_plane('Blue', axi, 'Step {}'.format(i + 1), plane_param)
             i += 1
 
         return ax
 
 
-    def plot_parting_plane(self, color, ax, name, plane_param=None):
+    def plot_separating_plane(self, color, ax, name, plane_param=None):
         """
         Args:
             color: color for the plane
             ax: matplotlib ax object
             weights: weight vector, if none the current weight vector of the object is used
         """
-        xLimits = np.asarray(ax.get_xlim())
+        x_min = np.min(self.data[:,0])
+        x_max = np.max(self.data[:,0])
+        y_min = np.min(self.data[:,1])
+        y_max = np.max(self.data[:,1])
+
+        min_value = min(x_min, y_min) - 1
+        max_value = max(x_max, y_max) + 1
+
         if plane_param is None:
             w = self.w
             b = self.b
@@ -287,21 +302,23 @@ class Perceptron(object):
             w = plane_param[0]
             b = plane_param[1]
 
-        if abs(w[1]) > abs(w[0]):
-            # if w[1]>w[0] in absolute value, plane is likely to be leaving tops of plot
-            x0 = xLimits
-            x1 = -(b + x0 * w[0])/w[1]
-        else:
-            # otherwise plane is likely to be leaving sides of plot.
-            x1 = xLimits
-            x0 = -(b + x1 * w[0])/w[1]
+        axis_x = np.arange(min_value,max_value)
+        axis_y = -(b + axis_x * w[0])/w[1]
 
-        ax.plot(x0, x1,'--', color=color)
+        ax.plot(axis_x, axis_y,'--', color=color)
         ax.set_title(name)
 
 
     def plot_discriminant_function(self):
-        window_size = np.asarray([-50, 50])
+        x_min = np.min(self.data[:,0])
+        x_max = np.max(self.data[:,0])
+        y_min = np.min(self.data[:,1])
+        y_max = np.max(self.data[:,1])
+
+        min_value = min(x_min, y_min) - 1
+        max_value = max(x_max, y_max) + 1
+
+        window_size = np.asarray([min_value, max_value])
 
         x = np.arange(window_size[0]-1, window_size[1]+1)
         y = np.arange(window_size[0]-1, window_size[1]+1)
@@ -316,11 +333,31 @@ class Perceptron(object):
                 tmp_array[1] = Y[i][j]
                 scalar = np.dot(self.w,tmp_array)
                 res = scalar + self.b
-                if res < 0:
-                    res = -res
-                Z[i][j] = res
+                res = (res * 100) / 100.0
 
-        plt.contourf(X,Y,Z, 100, cmap=plt.get_cmap('afmhot'))
+                Z[i][j] = res
+                
+        fig, ax = plt.subplots(nrows=1)
+
+        levels = MaxNLocator(nbins=3).tick_values(Z.min(), Z.max())
+        cmap = plt.get_cmap('afmhot')
+
+        cf = ax.contourf(X,Y,Z, levels=levels, cmap=cmap)
+
+        fig.colorbar(cf, ax=ax)
+        ax.set_title('heatmap')
+
+        mask1 = self.y == 1
+        mask2 = self.y == -1
+        d1 = np.compress(mask1[:,0], self.data, axis=0)
+        d2 = np.compress(mask2[:,0], self.data, axis=0)
+
+        ax.scatter(d1[:,0], d1[:,1], color='DarkBlue')
+        ax.scatter(d2[:,0], d2[:,1], color='Yellow')
+
+        fig.tight_layout()
+
+        plt.show()
 
 
 class GaussianNaiveBayes(object):
@@ -391,12 +428,8 @@ class GaussianNaiveBayes(object):
         return classifaction_vector
 
     def plot_discriminant_function(self, colors):
-        ax = plt.subplot(111)
-
         min_val = -2
         max_val =  2
-
-        ax.axis([min_val,max_val, min_val,max_val])
         window_size =  np.arange(min_val-1, max_val+1)
 
         X,Y = np.meshgrid(window_size,window_size)
@@ -413,9 +446,21 @@ class GaussianNaiveBayes(object):
 
                 Z[i][j] = ((self.p_class1 * likelihood_class1) / (self.p_class2 * likelihood_class2)) - 1
 
-        ax.contourf(X,Y,Z, 2, cmap=plt.get_cmap('gray'))
+        levels = MaxNLocator(nbins=15).tick_values(Z.min(), Z.max()) 
+        cmap = plt.get_cmap('gray')
+
+        fig, ax = plt.subplots(nrows=1)
+
+        cf = ax.contourf(X,Y,Z, levels=levels, cmap=cmap)
+
+        fig.colorbar(cf, ax=ax)
+        ax.set_title('heatmap')
         ax.scatter(self.data_class1[:,0], self.data_class1[:,1], c=colors[0])
         ax.scatter(self.data_class2[:,0], self.data_class2[:,1], c=colors[1])
+        
+        fig.tight_layout()
+
+        plt.show()
 
     @staticmethod
     def GNB(x, sigma, mu):

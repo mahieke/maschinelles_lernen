@@ -4,6 +4,7 @@ import math
 from skimage.io import imread
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
+import scipy.stats as stats
 import matplotlib.pyplot as plt
 
 def create_isotropic_gaussian_twindataset(pos, amount_data, variance, sep_vec):
@@ -185,7 +186,7 @@ class Perceptron(object):
         print("Last step: b = {}, \n\t   w = {}".format(self.b, self.w))
         print("Functional margin min and max: {}, {}".format(min(self.mi), max(self.mi)))
 
-    def classify(self, data, labels):
+    def classify(self, data, labels, c=0, verbose=True):
         """
 
         Args:
@@ -199,24 +200,30 @@ class Perceptron(object):
         false_negative, true_negative, false_positive, true_positive = 0,0,0,0
 
         for xi, yi  in zip(data, labels):
-            m = xi.dot(self.w) + self.b
+            m = xi.dot(self.w) + self.b + c
 
             if m <= 0.0: # negative
-                if int(yi) == -1:
+                if int(yi) < 0:
                     true_negative += 1
                 else:
                     false_negative += 1
 
             else: # positive
-                if int(yi) == -1:
-                    false_positive += 1
-                else:
+                if int(yi) > 0:
                     true_positive += 1
-
-        print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / len(data)))
-        print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / len(data)))
-        print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / len(data)))
-        print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive, 100 * true_positive / len(data)))
+                else:
+                    false_positive += 1
+                    
+        positives = len([i for i in labels if i > 0])
+        negatives = len([i for i in labels if i < 0])
+        
+        if verbose:
+            print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / positives))
+            print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / negatives))
+            print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / negatives))
+            print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive, 100 * true_positive / positives))
+        
+        return true_positive/positives, false_positive/negatives
 
 
     def plot_result2D(self, colors, amount_correction_steps=2, ):
@@ -379,9 +386,35 @@ class GaussianNaiveBayes(object):
 
         self.std_class1 = np.std(self.data_class1, axis=0).A1
         self.std_class2 = np.std(self.data_class2, axis=0).A1
+        
+        rows = np.ceil(len(self.mean_class1) / 3.0)
+        
+        fig = plt.figure(figsize=(15,5*rows))
+        fig.suptitle('positives:', fontsize=20)
+        
+        for index, (mu, std) in enumerate(zip(self.mean_class1, self.std_class1)):
+            ax = plt.subplot(rows, 3, index + 1)
+            ax.set_title("{}: mu={:.3f}, std={:.3f}".format(index, mu, std))
+            h = np.sort(self.data_class1[:,index],axis=0)
+            fit = stats.norm.pdf(h, mu, std)
+            plt.plot(h,fit,'-o')
+            plt.hist(h,normed=True)
+            
+        fig = plt.figure(figsize=(15,5*rows))
+        fig.suptitle('negatives:', fontsize=20)
+        
+        for index, (mu, std) in enumerate(zip(self.mean_class2, self.std_class2)):
+            ax = plt.subplot(rows, 3, index + 1)
+            ax.set_title("{}: mu={:.3f}, std={:.3f}".format(index, mu, std))
+            h = np.sort(self.data_class2[:,index],axis=0)
+            fit = stats.norm.pdf(h, mu, std)
+            plt.plot(h,fit,'-o')
+            plt.hist(h,normed=True)
+        
+        plt.show()
 
 
-    def classify(self, data, label):
+    def classify(self, data, label, c=None, verbose=True):
         """
         Args:
             data: datapoints which should be classified
@@ -401,32 +434,44 @@ class GaussianNaiveBayes(object):
             dp = datapoint.A1
             likelihood_class1 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(dp, self.mean_class1, self.std_class1)])
             likelihood_class2 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(dp, self.mean_class2, self.std_class2)])
-
-            if likelihood_class1 * self.p_class1 > likelihood_class2 * self.p_class2:
-                # datapoint belongs to class1: true
-                if int(y) == 1:
+            
+            if self.discriminant_function(self.p_class1, self.p_class2, likelihood_class1, likelihood_class2, c) >= 0:
+                # detected as positive
+                if int(y) > 0:
                     true_positive += 1
                 else:
-                    true_negative += 1
+                    false_positive += 1
 
                 classifaction_vector.append(1)
             else:
-                #datapoint belongs to class2: false
-                if int(y) == -1:
-                    false_positive += 1
+                #detected as negative
+                if int(y) < 0:
+                    true_negative += 1
                 else:
                     false_negative += 1
 
                 classifaction_vector.append(-1)
+                
+        positives = len([i for i in label if i > 0])
+        negatives = len([i for i in label if i < 0])
+                
+        if verbose:
+            print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / positives))
+            print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / negatives))
+            print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / negatives))
+            print("True positive (Detektionsrate): {} --> {:.2f}%".format(true_positive, 100 * true_positive / positives))
 
+        return true_positive/positives, false_positive/negatives
 
-        print("False negative (Miss): {} --> {:.2f}%".format(false_negative, 100 * false_negative / len(data)))
-        print("False positive (Fehlalarmrate): {} --> {:.2f}%".format(false_positive, 100 * false_positive / len(data)))
-        print("True negative (korrekte Rückweisung): {} --> {:.2f}%".format(true_negative, 100 * true_negative / len(data)))
-        print("True positive (Detektionswahrscheinlichkeit): {} --> {:.2f}%".format(true_positive, 100 * true_positive / len(data)))
-
-        return classifaction_vector
-
+    @staticmethod
+    def discriminant_function(apriori1, apriori2, likelihood1, likelihood2, c=None):
+        if c:
+            res = (c*likelihood1/likelihood2) - 1
+            return res
+        else:
+            return ((apriori1*likelihood1)/(apriori2*likelihood2)) - 1
+            
+    
     def plot_discriminant_function(self, colors):
         min_val = -2
         max_val =  2
@@ -444,7 +489,7 @@ class GaussianNaiveBayes(object):
                 likelihood_class1 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(x, self.mean_class1, self.std_class1)])
                 likelihood_class2 = np.multiply.reduce([GaussianNaiveBayes.GNB(x,mu,sigma) for x, mu, sigma in zip(x, self.mean_class2, self.std_class2)])
 
-                Z[i][j] = ((self.p_class1 * likelihood_class1) / (self.p_class2 * likelihood_class2)) - 1
+                Z[i][j] = self.discriminant_function(self.p_class1, self.p_class2, likelihood_class1, likelihood_class2)
 
         levels = MaxNLocator(nbins=15).tick_values(Z.min(), Z.max()) 
         cmap = plt.get_cmap('gray')
@@ -463,7 +508,7 @@ class GaussianNaiveBayes(object):
         plt.show()
 
     @staticmethod
-    def GNB(x, sigma, mu):
+    def GNB(x, mu, sigma):
         variance = sigma**2
         pi = math.pi
         a = 1 / np.sqrt(2*pi*variance)
